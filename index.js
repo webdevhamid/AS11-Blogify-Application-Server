@@ -4,12 +4,14 @@ const app = express();
 const port = process.env.PORT || 3000;
 const cors = require("cors");
 const cookieParse = require("cookie-parser");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // Middlewares
 app.use(cors());
-app.use(cookieParse());
+app.use(express.json());
+// app.use(cookieParse());
 
+// MongoDB Connection URI
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.w1xw1.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -20,28 +22,55 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
-
+// Main function for our API
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
+    // Create database and a collection
     const database = client.db("NewsWavesDB");
     const blogsCollection = database.collection("blogs");
 
+    // Get all blogs (GET Endpoint)
     app.get("/blogs", async (req, res) => {
       const result = await blogsCollection.find().toArray();
       res.send(result);
     });
 
-    app.get("/featured-blogs", async (req, res) => {
+    // Get all banner featured blogs
+    app.get("/featured-banners", async (req, res) => {
       const result = await blogsCollection.find({ featuredBanner: true }).limit(5).toArray();
       res.send(result);
     });
 
+    // Get all breaking news
+    app.get("/breaking-news", async (req, res) => {
+      const response = await blogsCollection.find({ breakingNews: true }).toArray();
+      res.send(response);
+    });
+
+    // Get all recent blogs
     app.get("/recent-blogs", async (req, res) => {
       const result = await blogsCollection.find().limit(6).toArray();
       res.send(result);
+    });
+
+    // Get a specific blog based on id
+    app.get("/single-blog/:id", async (req, res) => {
+      const postId = req.params.id;
+      const query = { _id: new ObjectId(postId) };
+      const response = await blogsCollection.findOne(query);
+      res.send(response);
+    });
+
+    // Post a blog
+    app.post(`/add-blog`, async (req, res) => {
+      // Get the blog data
+      const data = req.body;
+      console.log(data);
+      const response = await blogsCollection.insertOne(data);
+      res.send(response);
     });
 
     // Send a ping to confirm a successful connection
