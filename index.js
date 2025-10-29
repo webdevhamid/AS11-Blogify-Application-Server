@@ -31,6 +31,7 @@ async function run() {
     // Create database and a collection
     const database = client.db("NewsWavesDB");
     const blogsCollection = database.collection("blogs");
+    const commentsCollection = database.collection("comments");
 
     // Get all blogs (GET Endpoint)
     app.get("/blogs", async (req, res) => {
@@ -38,7 +39,6 @@ async function run() {
       const isBreakingNews = req.query.breakingNews;
       // Get all specific category news
       const categoryType = req.query.categoryType;
-      console.log(categoryType);
       // Empty query
       let query = {};
 
@@ -84,9 +84,24 @@ async function run() {
     app.post(`/add-blog`, async (req, res) => {
       // Get the blog data
       const data = req.body;
-      console.log(data);
       const response = await blogsCollection.insertOne(data);
       res.send(response);
+    });
+
+    // Post a Comment
+    app.post("/add-comment", async (req, res) => {
+      const commentData = req.body;
+      const result = await commentsCollection.insertOne(commentData);
+      console.log(result);
+      res.send(result);
+    });
+
+    // Get all comments based on 'specific blog id'
+    app.get("/comments/:blogId", async (req, res) => {
+      const id = req.params.blogId;
+      const query = { blogId: id };
+      const result = await commentsCollection.find(query).toArray();
+      res.send(result);
     });
 
     // Send a ping to confirm a successful connection
