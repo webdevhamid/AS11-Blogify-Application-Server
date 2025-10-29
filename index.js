@@ -34,7 +34,29 @@ async function run() {
 
     // Get all blogs (GET Endpoint)
     app.get("/blogs", async (req, res) => {
-      const result = await blogsCollection.find().toArray();
+      // get the breakingNews query
+      const isBreakingNews = req.query.breakingNews;
+      // Get all specific category news
+      const categoryType = req.query.categoryType;
+      console.log(categoryType);
+      // Empty query
+      let query = {};
+
+      // Check if the breaking news query exist
+      if (isBreakingNews) {
+        // Add "breakingNews" key-pairs in the query object
+        query.breakingNews = true;
+      }
+
+      // Check if the categoryType query exist
+      if (categoryType) {
+        query = {
+          category: categoryType,
+        };
+      }
+
+      // Get expected results
+      const result = await blogsCollection.find(query).toArray();
       res.send(result);
     });
 
@@ -42,12 +64,6 @@ async function run() {
     app.get("/featured-banners", async (req, res) => {
       const result = await blogsCollection.find({ featuredBanner: true }).limit(5).toArray();
       res.send(result);
-    });
-
-    // Get all breaking news
-    app.get("/breaking-news", async (req, res) => {
-      const response = await blogsCollection.find({ breakingNews: true }).toArray();
-      res.send(response);
     });
 
     // Get all recent blogs
