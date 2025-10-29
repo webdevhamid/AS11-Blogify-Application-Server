@@ -38,7 +38,11 @@ async function run() {
       // get the breakingNews query
       const isBreakingNews = req.query.breakingNews;
       // Get all specific category news
-      const categoryType = req.query.categoryType;
+      const categoryType = decodeURIComponent(req.query.categoryType);
+      // Get search query
+      const searchQuery = req.query.search;
+      console.log(searchQuery);
+
       // Empty query
       let query = {};
 
@@ -50,8 +54,22 @@ async function run() {
 
       // Check if the categoryType query exist
       if (categoryType) {
+        if (categoryType === "All") {
+          query = {};
+        } else {
+          query = {
+            category: categoryType,
+          };
+        }
+      }
+
+      // Check if search query exist,
+      if (searchQuery) {
         query = {
-          category: categoryType,
+          title: {
+            $regex: searchQuery,
+            $options: "i",
+          },
         };
       }
 
