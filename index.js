@@ -102,9 +102,15 @@ async function run() {
       const searchQuery = req.query.search;
       // Get Featured query
       const featuredQuery = req.query.featured;
+      // Get recentPosts query
+      const recentPostsQuery = req.query.recentPosts;
+      // Get limit query
+      const limitQuery = req.query.limitQuery;
 
       // Empty query for query options
       let query = {};
+      let sortQuery = {};
+      let limit = 0;
 
       // Check if the featured query exist
       if (featuredQuery) {
@@ -146,20 +152,23 @@ async function run() {
         };
       }
 
+      // Check if recent post query exists
+      if (recentPostsQuery && limitQuery) {
+        sortQuery = {
+          // Add "publishedAt" property in the query object
+          publishedAt: -1,
+        };
+        limit = 6;
+      }
+
       // Get expected results
-      const result = await blogsCollection.find(query).toArray();
+      const result = await blogsCollection.find(query).sort(sortQuery).limit(limit).toArray();
       res.send(result);
     });
 
     // Get all featured banner blogs
     app.get("/featured-banners", async (req, res) => {
       const result = await blogsCollection.find({ featuredBanner: true }).limit(5).toArray();
-      res.send(result);
-    });
-
-    // Get all recent blogs
-    app.get("/recent-blogs", async (req, res) => {
-      const result = await blogsCollection.find().limit(6).toArray();
       res.send(result);
     });
 
@@ -227,12 +236,14 @@ async function run() {
     app.get("/wishlist/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
       const decodedEmail = req.user?.email;
+      const query = { userEmail: email };
 
       if (decodedEmail !== email) {
         return res.status(403).send({ massage: "forbidden access" });
       }
 
-      res.send("Redirected Successfully!");
+      const result = await wishlistsCollection.find(query).toArray();
+      res.send(result);
     });
 
     // My Blogs endpoint
