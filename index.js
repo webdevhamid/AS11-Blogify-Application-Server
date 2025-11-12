@@ -174,11 +174,22 @@ async function run() {
 
     // Get a specific blog post based on it's id
     app.get("/single-blog/:id", async (req, res) => {
-      const postId = req.params.id;
-      const query = { _id: new ObjectId(postId) };
+      try {
+        const postId = req.params.id;
+        const query = { _id: new ObjectId(postId) };
 
-      const response = await blogsCollection.findOne(query);
-      res.send(response);
+        const response = await blogsCollection.findOne(query);
+
+        // Validating the post
+        if (!response) {
+          return res.status(404).send({ success: false, message: "This post no longer exists." });
+        }
+
+        res.send(response);
+      } catch (err) {
+        console.log(err);
+        res.status(500).send({ success: false, message: "Server error while fetching blog." });
+      }
     });
 
     // Post a blog
@@ -197,6 +208,21 @@ async function run() {
       // Send the blog data to blogs collection
       const response = await blogsCollection.insertOne(data);
       res.send(response);
+    });
+
+    // Delete a blog
+    app.delete("/delete-blog/:email", verifyToken, async (req, res) => {
+      const { id } = req.body;
+      const query = { _id: new ObjectId(id) };
+      const decodedEmail = req.user?.email;
+      const email = req.params.email;
+
+      if (decodedEmail != email) {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+
+      const result = await blogsCollection.deleteOne(query);
+      res.send(result);
     });
 
     // Post a Comment
@@ -218,16 +244,23 @@ async function run() {
     app.post("/add-wishlist", async (req, res) => {
       // Get the wishlist data
       const data = req.body;
+      const query = { postId: data.postId, userEmail: data.userEmail };
+
+      // Check duplicate wishlist
+      const isExisting = await wishlistsCollection.findOne(query);
+
+      if (isExisting) {
+        return res.status(400).send({ message: "Item already wishlisted" });
+      }
 
       const result = await wishlistsCollection.insertOne(data);
-      console.log(data);
       res.send(result);
     });
 
     // Remove a post from wishlist
     app.delete("/remove-wishlist", async (req, res) => {
-      const { postId, userEmail } = req.body;
-      const query = { postId, userEmail };
+      const { id } = req.body;
+      const query = { postId: id };
       const result = await wishlistsCollection.deleteOne(query);
       res.send(result);
     });
