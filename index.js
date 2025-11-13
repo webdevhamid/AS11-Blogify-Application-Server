@@ -166,6 +166,23 @@ async function run() {
       res.send(result);
     });
 
+    // Update blog
+    app.patch("/update-blog/:id", verifyToken, async (req, res) => {
+      const id = req.params.id;
+      const decodedEmail = req.user?.email;
+      const query = { _id: new ObjectId(id) };
+      const updatedData = req.body;
+      const email = updatedData?.author?.email;
+      const update = {
+        $set: updatedData,
+      };
+      // Check email
+      if (decodedEmail !== email) return res.status(403).send({ message: "Forbidden Access" });
+
+      const result = await blogsCollection.updateOne(query, update);
+      res.send(result);
+    });
+
     // Get all featured banner blogs
     app.get("/featured-banners", async (req, res) => {
       const result = await blogsCollection.find({ featuredBanner: true }).limit(5).toArray();
