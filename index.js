@@ -7,16 +7,30 @@ const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const jwt = require("jsonwebtoken");
 
+const admin = require("firebase-admin");
+const decodedKeys = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString("utf-8");
+const serviceAccount = JSON.parse(decodedKeys);
+
 // Middlewares
 // Allow requests from frontend (Ex: localhost:5173)
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: [
+      "http://localhost:5173",
+      "https://blogify-app-a2276.web.app",
+      "https://blogify-app-a2276.firebaseapp.com",
+      "https://hamid.znsusa.com",
+    ],
     credentials: true, // allows cookies
   })
 );
-app.use(express.json());
 app.use(cookieParser());
+app.use(express.json());
+
+// Firebase admin initialization for authentication
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 // MongoDB Connection URI
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.w1xw1.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -40,6 +54,8 @@ const verifyToken = (req, res, next) => {
 
   // If token exist, then verify it,
   jwt.verify(token, process.env.SECRET_KEY, (err, decoded) => {
+    if (err) return res.status(401).send({ message: "unauthorized token" });
+
     // Store the decoded token info in the user object
     req.user = decoded;
 
@@ -48,11 +64,30 @@ const verifyToken = (req, res, next) => {
   });
 };
 
+// Middleware for verifying firebase token
+const verifyFirebaseToken = async (req, res, next) => {
+  const authHeader = req.headers?.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).send({ message: "unauthorized token" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.decoded = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).send({ message: "unauthorized token" });
+  }
+};
+
 // Main function for our API
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     // Create database and a collection
     const database = client.db("NewsWavesDB");
@@ -78,6 +113,7 @@ async function run() {
         secure: process.env.NODE_ENV === "production", // required for HTTPS
         sameSite: process.env.NODE_ENV === "production" ? "none" : "strict", //  for cross-domain cookies
         maxAge: 24 * 60 * 60 * 1000, // 1 day in ms
+        partitioned: true,
       });
       res.send({ message: "Token created successfully" });
     });
@@ -88,8 +124,9 @@ async function run() {
         httpOnly: true, // Prevent XSS attacks (through JS Accessing)
         secure: process.env.NODE_ENV === "production", // required for HTTPS
         sameSite: process.env.NODE_ENV === "production" ? "none" : "strict", //  for cross-domain cookies
+        partitioned: true,
       });
-      res.send({ message: "Cookies cleared successfully" });
+      res.status(200).send({ message: "Cookies cleared successfully" });
     });
 
     // Get all blogs (GET Endpoint)
@@ -167,9 +204,9 @@ async function run() {
     });
 
     // Update blog
-    app.patch("/update-blog/:id", verifyToken, async (req, res) => {
+    app.patch("/update-blog/:id", verifyFirebaseToken, async (req, res) => {
       const id = req.params.id;
-      const decodedEmail = req.user?.email;
+      const decodedEmail = req.decoded?.email;
       const query = { _id: new ObjectId(id) };
       const updatedData = req.body;
       const email = updatedData?.author?.email;
@@ -204,17 +241,17 @@ async function run() {
 
         res.send(response);
       } catch (err) {
-        console.log(err);
+        err;
         res.status(500).send({ success: false, message: "Server error while fetching blog." });
       }
     });
 
     // Post a blog
-    app.post("/add-blog/:email", verifyToken, async (req, res) => {
+    app.post("/add-blog/:email", verifyFirebaseToken, async (req, res) => {
       // Get the blog data
       const data = req.body;
       // Get the decoded user from the token
-      const decodedEmail = req.user?.email;
+      const decodedEmail = req.decoded?.email;
       // Get the user email
       const email = req.params.email;
 
@@ -228,10 +265,10 @@ async function run() {
     });
 
     // Delete a blog
-    app.delete("/delete-blog/:email", verifyToken, async (req, res) => {
+    app.delete("/delete-blog/:email", verifyFirebaseToken, async (req, res) => {
       const { id } = req.body;
       const query = { _id: new ObjectId(id) };
-      const decodedEmail = req.user?.email;
+      const decodedEmail = req.decoded?.email;
       const email = req.params.email;
 
       if (decodedEmail != email) {
@@ -283,26 +320,37 @@ async function run() {
     });
 
     // Get all wishlists
-    app.get("/wishlist/:email", verifyToken, async (req, res) => {
+    app.get("/wishlists/:email", verifyFirebaseToken, async (req, res) => {
       const email = req.params.email;
-      const decodedEmail = req.user?.email;
+      const decodedEmail = req.decoded?.email;
       const query = { userEmail: email };
 
-      if (decodedEmail !== email) {
-        return res.status(403).send({ massage: "forbidden access" });
+      if (email !== decodedEmail) {
+        return res.status(401).send({ message: "unauthorized token" });
       }
 
       const result = await wishlistsCollection.find(query).toArray();
       res.send(result);
     });
 
+    // Check if a post is wishListed
+    app.get("/wishlist/:postId", verifyFirebaseToken, async (req, res) => {
+      const id = req.params.postId;
+      const decodedEmail = req.decoded?.email;
+      const query = { userEmail: decodedEmail, postId: id };
+
+      const exists = await wishlistsCollection.findOne(query);
+      // !!exists converts forcefully to boolean. true || false
+      res.send({ exists: !!exists });
+    });
+
     // My Blogs endpoint
-    app.get("/my-blogs/:email", verifyToken, async (req, res) => {
+    app.get("/my-blogs/:email", verifyFirebaseToken, async (req, res) => {
       const email = req.params.email;
       const query = {
         "author.email": email,
       };
-      const decodedEmail = req.user?.email;
+      const decodedEmail = req.decoded?.email;
       if (decodedEmail !== email) {
         return res.status(403).send({ message: "Forbidden Access" });
       }
@@ -311,8 +359,8 @@ async function run() {
     });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    // await client.db("admin").command({ ping: 1 });
+    // ("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
@@ -325,5 +373,5 @@ app.get("/", (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`Blog app listening on port ${port}`);
+  `Blog app listening on port ${port}`;
 });
