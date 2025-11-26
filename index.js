@@ -45,24 +45,24 @@ const client = new MongoClient(uri, {
 });
 
 // Middleware for verifying JWT cookie
-const verifyToken = (req, res, next) => {
-  // Get the token from cookies
-  const token = req.cookies?.token;
+// const verifyToken = (req, res, next) => {
+//   // Get the token from cookies
+//   const token = req.cookies?.token;
 
-  // Check if token not exist
-  if (!token) return res.status(401).send({ message: "unauthorized token" });
+//   // Check if token not exist
+//   if (!token) return res.status(401).send({ message: "unauthorized token" });
 
-  // If token exist, then verify it,
-  jwt.verify(token, process.env.SECRET_KEY, (err, decoded) => {
-    if (err) return res.status(401).send({ message: "unauthorized token" });
+//   // If token exist, then verify it,
+//   jwt.verify(token, process.env.SECRET_KEY, (err, decoded) => {
+//     if (err) return res.status(401).send({ message: "unauthorized token" });
 
-    // Store the decoded token info in the user object
-    req.user = decoded;
+//     // Store the decoded token info in the user object
+//     req.user = decoded;
 
-    // Navigate next to the middleware
-    next();
-  });
-};
+//     // Navigate next to the middleware
+//     next();
+//   });
+// };
 
 // Middleware for verifying firebase token
 const verifyFirebaseToken = async (req, res, next) => {
@@ -96,38 +96,38 @@ async function run() {
     const wishlistsCollection = database.collection("wishlists");
 
     // Generate a JWT token (POST Endpoint)
-    app.post("/jwt", async (req, res) => {
-      const { email } = req.body;
-      // Create a JWT Token
-      const token = jwt.sign(
-        { email }, // payload consist with the user email
-        process.env.SECRET_KEY, // Secret key
-        {
-          expiresIn: "1d", // One day / 24 hours
-        }
-      );
+    // app.post("/jwt", async (req, res) => {
+    //   const { email } = req.body;
+    //   // Create a JWT Token
+    //   const token = jwt.sign(
+    //     { email }, // payload consist with the user email
+    //     process.env.SECRET_KEY, // Secret key
+    //     {
+    //       expiresIn: "1d", // One day / 24 hours
+    //     }
+    //   );
 
-      // Send the token to the browser cookie
-      res.cookie("token", token, {
-        httpOnly: true, // Prevent XSS attacks (through JS Accessing)
-        secure: process.env.NODE_ENV === "production", // required for HTTPS
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "strict", //  for cross-domain cookies
-        maxAge: 24 * 60 * 60 * 1000, // 1 day in ms
-        partitioned: true,
-      });
-      res.send({ message: "Token created successfully" });
-    });
+    //   // Send the token to the browser cookie
+    //   res.cookie("token", token, {
+    //     httpOnly: true, // Prevent XSS attacks (through JS Accessing)
+    //     secure: process.env.NODE_ENV === "production", // required for HTTPS
+    //     sameSite: process.env.NODE_ENV === "production" ? "none" : "strict", //  for cross-domain cookies
+    //     maxAge: 24 * 60 * 60 * 1000, // 1 day in ms
+    //     partitioned: true,
+    //   });
+    //   res.send({ message: "Token created successfully" });
+    // });
 
     // Clear Cookie
-    app.post("/logout", async (req, res) => {
-      res.clearCookie("token", {
-        httpOnly: true, // Prevent XSS attacks (through JS Accessing)
-        secure: process.env.NODE_ENV === "production", // required for HTTPS
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "strict", //  for cross-domain cookies
-        partitioned: true,
-      });
-      res.status(200).send({ message: "Cookies cleared successfully" });
-    });
+    // app.post("/logout", async (req, res) => {
+    //   res.clearCookie("token", {
+    //     httpOnly: true, // Prevent XSS attacks (through JS Accessing)
+    //     secure: process.env.NODE_ENV === "production", // required for HTTPS
+    //     sameSite: process.env.NODE_ENV === "production" ? "none" : "strict", //  for cross-domain cookies
+    //     partitioned: true,
+    //   });
+    //   res.status(200).send({ message: "Cookies cleared successfully" });
+    // });
 
     // Get all blogs (GET Endpoint)
     app.get("/blogs", async (req, res) => {
@@ -139,15 +139,13 @@ async function run() {
       const searchQuery = req.query.search;
       // Get Featured query
       const featuredQuery = req.query.featured;
-      // Get recentPosts query
-      const recentPostsQuery = req.query.recentPosts;
-      // Get limit query
-      const limitQuery = req.query.limitQuery;
+      // get limit query
+      const limit = parseInt(req.query.limit);
+      // get current page number query
+      const currentPage = parseInt(req.query.page);
 
       // Empty query for query options
       let query = {};
-      let sortQuery = {};
-      let limit = 0;
 
       // Check if the featured query exist
       if (featuredQuery) {
@@ -189,17 +187,29 @@ async function run() {
         };
       }
 
-      // Check if recent post query exists
-      if (recentPostsQuery && limitQuery) {
-        sortQuery = {
-          // Add "publishedAt" property in the query object
-          publishedAt: -1,
-        };
-        limit = 6;
-      }
+      // Get expected results
+      const result = await blogsCollection
+        .find(query)
+        .skip(currentPage * limit)
+        .limit(limit)
+        .toArray();
+      res.send(result);
+    });
+
+    app.get("/total-blogs", async (req, res) => {
+      const result = await blogsCollection.estimatedDocumentCount();
+      return res.send(result);
+    });
+
+    // Recent Blogs
+    app.get("/recent-posts", async (req, res) => {
+      // Get limit query
+      const limitQuery = parseInt(req.query.limit);
+      // Add "publishedAt" property in the query object
+      const query = { publishedAt: -1 };
 
       // Get expected results
-      const result = await blogsCollection.find(query).sort(sortQuery).limit(limit).toArray();
+      const result = await blogsCollection.find().sort(query).limit(limitQuery).toArray();
       res.send(result);
     });
 
@@ -356,6 +366,20 @@ async function run() {
       }
       const result = await blogsCollection.find(query).toArray();
       res.send(result);
+    });
+
+    // Featured Blogs based on word length
+    app.get("/featured-blogs", async (req, res) => {
+      const result = await blogsCollection.find().toArray();
+
+      // Aggregate data based on wordCount property
+      for (const post of result) {
+        post.wordLength = post.description.length;
+      }
+
+      const top10Posts = result.sort((a, b) => b.wordLength - a.wordLength).slice(0, 10);
+
+      res.send(top10Posts);
     });
 
     // Send a ping to confirm a successful connection
